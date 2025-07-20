@@ -7,8 +7,7 @@ from io import BytesIO
 import boto3
 from botocore.config import Config
 from botocore import UNSIGNED
-from source.locations import get_output_dir, get_labels_dir
-
+from source.config.locations import get_output_dir
 
 def generate_full_c17_dataframe():
 	"""
