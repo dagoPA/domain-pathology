@@ -13,6 +13,7 @@ PROJECT_BASE_DIR = os.path.join(RESULTS_DIR, "projects/micropath/domain-patholog
 FIGURES_DIR = os.path.join(PROJECT_BASE_DIR, "figures")
 CACHE_DIR = os.path.join(PROJECT_BASE_DIR, "cache")
 DATASET_DIR = os.path.join(PROJECT_BASE_DIR, "dataset")
+LABELS_DIR = os.path.join(PROJECT_BASE_DIR, "labels")
 
 # Ensure directories exist when imported
 def ensure_directories():
@@ -21,6 +22,7 @@ def ensure_directories():
         os.makedirs(FIGURES_DIR, exist_ok=True)
         os.makedirs(CACHE_DIR, exist_ok=True)
         os.makedirs(DATASET_DIR, exist_ok=True)
+        os.makedirs(LABELS_DIR, exist_ok=True)
         return FIGURES_DIR
     except (OSError, PermissionError) as e:
         # Fallback to local outputs directory if configured path is not accessible
@@ -28,12 +30,15 @@ def ensure_directories():
         fallback_dir = os.path.join(os.getcwd(), 'outputs')
         fallback_cache_dir = os.path.join(os.getcwd(), 'cache')
         fallback_dataset_dir = os.path.join(os.getcwd(), 'dataset')
+        fallback_labels_dir = os.path.join(os.getcwd(), 'labels')
         print(f"Using fallback directory: {fallback_dir}")
         print(f"Using fallback cache directory: {fallback_cache_dir}")
         print(f"Using fallback dataset directory: {fallback_dataset_dir}")
+        print(f"Using fallback labels directory: {fallback_labels_dir}")
         os.makedirs(fallback_dir, exist_ok=True)
         os.makedirs(fallback_cache_dir, exist_ok=True)
         os.makedirs(fallback_dataset_dir, exist_ok=True)
+        os.makedirs(fallback_labels_dir, exist_ok=True)
         return fallback_dir
 
 # For backward compatibility, also provide the output directory
@@ -66,3 +71,16 @@ def get_dataset_dir():
         print(f"Using fallback dataset directory: {fallback_dataset_dir}")
         os.makedirs(fallback_dataset_dir, exist_ok=True)
         return fallback_dataset_dir
+
+def get_labels_dir():
+    """Get the configured labels directory."""
+    try:
+        os.makedirs(LABELS_DIR, exist_ok=True)
+        return LABELS_DIR
+    except (OSError, PermissionError) as e:
+        # Fallback to local labels directory if configured path is not accessible
+        print(f"Warning: Could not create configured labels directory {LABELS_DIR}: {e}")
+        fallback_labels_dir = os.path.join(os.getcwd(), 'labels')
+        print(f"Using fallback labels directory: {fallback_labels_dir}")
+        os.makedirs(fallback_labels_dir, exist_ok=True)
+        return fallback_labels_dir
