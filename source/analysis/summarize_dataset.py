@@ -123,7 +123,7 @@ def plot_and_save_statistics(df, output_dir):
 	return plot_basename
 
 
-def main_analysis_from_known_structure():
+def generate_dataset_statistics():
 	"""Main function to orchestrate the analysis from the known dataset structure."""
 	WASABI_ENDPOINT_URL = 'https://s3.ap-northeast-1.wasabisys.com'
 	BUCKET_NAME = 'gigadb-datasets'
@@ -175,4 +175,4 @@ def main_analysis_from_known_structure():
 
 
 if __name__ == '__main__':
-	main_analysis_from_known_structure()
+	generate_dataset_statistics()
