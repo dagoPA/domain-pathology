@@ -12,7 +12,7 @@ RESULTS_DIR = "/autofs/space/crater_001/"
 PROJECT_BASE_DIR = os.path.join(RESULTS_DIR, "projects/micropath/domain-pathology")
 FIGURES_DIR = os.path.join(PROJECT_BASE_DIR, "figures")
 CACHE_DIR = os.path.join(PROJECT_BASE_DIR, "cache")
-DATASET_DIR = os.path.join(PROJECT_BASE_DIR, "dataset")
+DATASET_DIR = "/autofs/space/crater_001/datasets/public/CAMELYON17/WSI"
 LABELS_DIR = os.path.join(PROJECT_BASE_DIR, "labels")
 
 # Ensure directories exist when imported

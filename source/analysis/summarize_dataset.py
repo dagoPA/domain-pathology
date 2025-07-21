@@ -7,7 +7,7 @@ from io import BytesIO
 import boto3
 from botocore.config import Config
 from botocore import UNSIGNED
-from source.config.locations import get_output_dir
+from source.config.locations import get_output_dir, get_labels_dir
 
 def generate_full_c17_dataframe():
 	"""
@@ -33,7 +33,6 @@ def generate_full_c17_dataframe():
 			})
 
 	return pd.DataFrame(records)
-
 
 def load_c17_labels_from_s3(s3_client, bucket, prefix):
 	"""Loads the official C17 training labels from the GigaDB/Wasabi mirror."""
@@ -157,6 +156,7 @@ def generate_dataset_statistics():
 
 	# 7. Save the master dataset CSV with the new column names
 	master_csv_path = get_labels_dir() + '/camelyon17-labels.csv'
+	# this is a test
 	final_df.to_csv(master_csv_path, index=False)
 	print(f"Processed master dataset saved to {master_csv_path}")
 

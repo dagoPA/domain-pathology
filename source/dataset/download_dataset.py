@@ -4,7 +4,7 @@ from botocore import UNSIGNED
 import sys
 import threading
 import os
-from source.config.locations import get_output_dir, get_labels_dir
+from source.config.locations import get_output_dir, get_labels_dir, get_dataset_dir
 
 # --- Constants ---
 BUCKET_NAME = 'camelyon-dataset'
