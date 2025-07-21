@@ -84,3 +84,17 @@ def get_labels_dir():
         print(f"Using fallback labels directory: {fallback_labels_dir}")
         os.makedirs(fallback_labels_dir, exist_ok=True)
         return fallback_labels_dir
+
+def get_labels_csv_path():
+    """Get the path to the CAMELYON17 labels CSV file."""
+    labels_csv_path = "/autofs/space/crater_001/projects/micropath/domain-pathology/labels/camelyon17-labels.csv"
+
+    # Check if the file exists, if not provide fallback
+    if os.path.exists(labels_csv_path):
+        return labels_csv_path
+    else:
+        # Fallback to local labels directory
+        print(f"Warning: Labels CSV file not found at {labels_csv_path}")
+        fallback_csv_path = os.path.join(get_labels_dir(), 'camelyon17-labels.csv')
+        print(f"Using fallback labels CSV path: {fallback_csv_path}")
+        return fallback_csv_path
