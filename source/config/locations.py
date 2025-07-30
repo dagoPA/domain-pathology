@@ -5,96 +5,68 @@ Contains global variables and paths used throughout the project.
 
 import os
 
-# Base results directory
-RESULTS_DIR = "/autofs/space/crater_001/"
+# --- Primary Paths (Configured for a specific server environment) ---
+PRIMARY_BASE_DIR = "/home/dagopa/projects/domain-pathology"
+PRIMARY_DATASET_DIR = "/home/dagopa/data/CAMELYON17/WSI"
+CONCH_MODEL_PATH = "/autofs/space/crater_001/tools/wsi_encoders/conch_v15.bin"
 
-# Project-specific paths
-PROJECT_BASE_DIR = os.path.join(RESULTS_DIR, "projects/micropath/domain-pathology")
-FIGURES_DIR = os.path.join(PROJECT_BASE_DIR, "figures")
-CACHE_DIR = os.path.join(PROJECT_BASE_DIR, "cache")
-DATASET_DIR = "/autofs/space/crater_001/datasets/public/CAMELYON17/WSI"
-LABELS_DIR = os.path.join(PROJECT_BASE_DIR, "labels")
+# --- Project-specific Subdirectories ---
+ANALYSIS_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "outputs/analysis")
+CACHE_DIR = os.path.join(PRIMARY_BASE_DIR, "cache")
+LABELS_DIR = os.path.join(PRIMARY_BASE_DIR, "labels")
+FEATURES_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "features/conch15")
 
-# Ensure directories exist when imported
-def ensure_directories():
-    """Create necessary directories if they don't exist."""
+
+def _create_dir_with_fallback(primary_path, fallback_subdir_name):
+    """
+    Attempts to create and return the primary_path.
+    If it fails (e.g., due to permissions), it creates and returns a local fallback directory.
+    """
     try:
-        os.makedirs(FIGURES_DIR, exist_ok=True)
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        os.makedirs(DATASET_DIR, exist_ok=True)
-        os.makedirs(LABELS_DIR, exist_ok=True)
-        return FIGURES_DIR
+        os.makedirs(primary_path, exist_ok=True)
+        return primary_path
     except (OSError, PermissionError) as e:
-        # Fallback to local outputs directory if configured path is not accessible
-        print(f"Warning: Could not create configured directory {FIGURES_DIR}: {e}")
-        fallback_dir = os.path.join(os.getcwd(), 'outputs')
-        fallback_cache_dir = os.path.join(os.getcwd(), 'cache')
-        fallback_dataset_dir = os.path.join(os.getcwd(), 'dataset')
-        fallback_labels_dir = os.path.join(os.getcwd(), 'labels')
+        print(f"Warning: Could not create configured directory '{primary_path}': {e}")
+        fallback_dir = os.path.join(os.getcwd(), fallback_subdir_name)
         print(f"Using fallback directory: {fallback_dir}")
-        print(f"Using fallback cache directory: {fallback_cache_dir}")
-        print(f"Using fallback dataset directory: {fallback_dataset_dir}")
-        print(f"Using fallback labels directory: {fallback_labels_dir}")
         os.makedirs(fallback_dir, exist_ok=True)
-        os.makedirs(fallback_cache_dir, exist_ok=True)
-        os.makedirs(fallback_dataset_dir, exist_ok=True)
-        os.makedirs(fallback_labels_dir, exist_ok=True)
         return fallback_dir
 
-# For backward compatibility, also provide the output directory
+
 def get_output_dir():
     """Get the configured output directory for analysis results."""
-    return ensure_directories()
+    # Note: The original 'FIGURES_DIR' is now 'ANALYSIS_OUTPUT_DIR' for clarity.
+    # The fallback is 'outputs/analysis' to better reflect its purpose.
+    return _create_dir_with_fallback(ANALYSIS_OUTPUT_DIR, 'outputs/analysis')
 
 def get_cache_dir():
     """Get the configured cache directory."""
-    try:
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        return CACHE_DIR
-    except (OSError, PermissionError) as e:
-        # Fallback to local cache directory if configured path is not accessible
-        print(f"Warning: Could not create configured cache directory {CACHE_DIR}: {e}")
-        fallback_cache_dir = os.path.join(os.getcwd(), 'cache')
-        print(f"Using fallback cache directory: {fallback_cache_dir}")
-        os.makedirs(fallback_cache_dir, exist_ok=True)
-        return fallback_cache_dir
+    return _create_dir_with_fallback(CACHE_DIR, 'cache')
 
 def get_dataset_dir():
     """Get the configured dataset directory."""
-    try:
-        os.makedirs(DATASET_DIR, exist_ok=True)
-        return DATASET_DIR
-    except (OSError, PermissionError) as e:
-        # Fallback to local dataset directory if configured path is not accessible
-        print(f"Warning: Could not create configured dataset directory {DATASET_DIR}: {e}")
-        fallback_dataset_dir = os.path.join(os.getcwd(), 'dataset')
-        print(f"Using fallback dataset directory: {fallback_dataset_dir}")
-        os.makedirs(fallback_dataset_dir, exist_ok=True)
-        return fallback_dataset_dir
+    return _create_dir_with_fallback(PRIMARY_DATASET_DIR, 'datasets/CAMELYON17/WSI')
 
 def get_labels_dir():
     """Get the configured labels directory."""
-    try:
-        os.makedirs(LABELS_DIR, exist_ok=True)
-        return LABELS_DIR
-    except (OSError, PermissionError) as e:
-        # Fallback to local labels directory if configured path is not accessible
-        print(f"Warning: Could not create configured labels directory {LABELS_DIR}: {e}")
-        fallback_labels_dir = os.path.join(os.getcwd(), 'labels')
-        print(f"Using fallback labels directory: {fallback_labels_dir}")
-        os.makedirs(fallback_labels_dir, exist_ok=True)
-        return fallback_labels_dir
+    return _create_dir_with_fallback(LABELS_DIR, 'labels')
+
+def get_features_output_dir():
+    """Get the configured features output directory."""
+    return _create_dir_with_fallback(FEATURES_OUTPUT_DIR, 'features/conch15')
 
 def get_labels_csv_path():
     """Get the path to the CAMELYON17 labels CSV file."""
-    labels_csv_path = "/autofs/space/crater_001/projects/micropath/domain-pathology/labels/camelyon17-labels.csv"
+    labels_dir = get_labels_dir()
+    return os.path.join(labels_dir, 'camelyon17-labels.csv')
 
-    # Check if the file exists, if not provide fallback
-    if os.path.exists(labels_csv_path):
-        return labels_csv_path
-    else:
-        # Fallback to local labels directory
-        print(f"Warning: Labels CSV file not found at {labels_csv_path}")
-        fallback_csv_path = os.path.join(get_labels_dir(), 'camelyon17-labels.csv')
-        print(f"Using fallback labels CSV path: {fallback_csv_path}")
-        return fallback_csv_path
+def get_conch_model_path():
+    """Get the path to the CONCH model file."""
+    global CONCH_MODEL_PATH
+    return CONCH_MODEL_PATH
+
+def set_conch_model_path(new_path):
+    """Set a new path for the CONCH model file."""
+    global CONCH_MODEL_PATH
+    CONCH_MODEL_PATH = new_path
+    print(f"CONCH model path updated to: {CONCH_MODEL_PATH}")

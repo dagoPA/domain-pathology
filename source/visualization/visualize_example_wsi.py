@@ -13,7 +13,7 @@ import openslide
 # Import configuration
 from source.config.locations import get_dataset_dir
 
-Image.MAX_IMAGE_PIXELS = None  # Desactiva el límite
+Image.MAX_IMAGE_PIXELS = None
 
 
 def visualize_wsi_thumbnail():
