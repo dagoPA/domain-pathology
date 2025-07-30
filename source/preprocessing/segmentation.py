@@ -139,6 +139,54 @@ def get_tile_coordinates_optimized(full_mask, low_res_mask, downsample_factor, p
     return sorted(list(coordinates_set))
 
 
+def get_tile_coordinates_integral(full_mask, low_res_mask, downsample_factor, params=DEFAULT_PARAMS):
+    """Faster tile coordinate generation using integral images.
+
+    The search is restricted to the tissue bounding boxes obtained at low
+    resolution and uses an integral image to quickly compute the tissue
+    fraction for each tile.
+
+    Args:
+        full_mask (np.ndarray): Full resolution binary mask (0/255).
+        low_res_mask (np.ndarray): Low resolution mask used to locate tissue.
+        downsample_factor (float): Ratio between full and low resolution levels.
+        params (dict): Segmentation and tiling parameters.
+
+    Returns:
+        list: Sorted list of valid tile ``(x, y)`` coordinates at level 0.
+    """
+    tile_size = params.get("tile_size", DEFAULT_PARAMS["tile_size"])
+    min_frac = params.get("tile_min_tissue_fraction", DEFAULT_PARAMS["tile_min_tissue_fraction"])
+    min_tissue_pixels = tile_size * tile_size * min_frac * 255
+
+    # Integral image for O(1) region sums. Convert mask to 0/1 then compute integral
+    integral = cv2.integral((full_mask > 0).astype(np.uint8), sdepth=cv2.CV_32S)
+
+    coordinates = []
+
+    contours, _ = cv2.findContours(low_res_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in contours:
+        x_low, y_low, w_low, h_low = cv2.boundingRect(contour)
+
+        x_start = int(x_low * downsample_factor)
+        y_start = int(y_low * downsample_factor)
+        x_end = int((x_low + w_low) * downsample_factor)
+        y_end = int((y_low + h_low) * downsample_factor)
+
+        x_start_grid = x_start - (x_start % tile_size)
+        y_start_grid = y_start - (y_start % tile_size)
+
+        for y in range(y_start_grid, y_end - tile_size + 1, tile_size):
+            y2 = y + tile_size
+            for x in range(x_start_grid, x_end - tile_size + 1, tile_size):
+                x2 = x + tile_size
+                region_sum = (integral[y2, x2] - integral[y, x2] - integral[y2, x] + integral[y, x])
+                if region_sum >= min_tissue_pixels:
+                    coordinates.append((x, y))
+
+    return coordinates
+
+
 def visualize_segmentation(wsi_path, mask, thumb_rgb, level, output_path):
     """
     Visualizes and saves the segmentation result.
@@ -214,9 +262,9 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
                 print(f"Could not reopen slide to get downsample factor: {e}")
                 continue
 
-            # Get and save tile coordinates using the optimized function
-            print("Extracting tile coordinates (optimized)...")
-            tile_coords = get_tile_coordinates_optimized(full_mask, low_res_mask, downsample_factor, params)
+            # Get and save tile coordinates using the integral image implementation
+            print("Extracting tile coordinates (fast)...")
+            tile_coords = get_tile_coordinates_integral(full_mask, low_res_mask, downsample_factor, params)
 
             coords_data = {
                 "tile_size": params.get("tile_size", DEFAULT_PARAMS["tile_size"]),
@@ -227,6 +275,14 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
             with open(coords_path, 'w') as f:
                 json.dump(coords_data, f, indent=4)
             print(f"Saved {len(tile_coords)} tile coordinates to: {coords_path}")
+
+            # Save coordinates also as compressed NumPy for faster loading
+            npz_path = os.path.join(slide_output_dir, f"{slide_name}_tile_coords.npz")
+            np.savez_compressed(npz_path,
+                                coordinates=np.array(tile_coords, dtype=np.int32),
+                                tile_size=params.get("tile_size", DEFAULT_PARAMS["tile_size"]),
+                                tile_level=0)
+            print(f"Saved coordinates in compressed format to: {npz_path}")
 
             params_to_save = params.copy()
             params_to_save['level_used'] = level
