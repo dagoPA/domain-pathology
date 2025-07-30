@@ -1,7 +1,8 @@
 """
 This module implements WSI tissue segmentation based on the CLAM algorithm.
-It processes slides from the configured dataset directory, generates tissue masks,
-saves full-scale masks, and extracts coordinates for valid tissue tiles.
+It processes slides, generates tissue masks, and extracts tile coordinates efficiently.
+The tile coordinate generation is optimized to only search within tissue regions.
+The full-scale mask is generated in memory but is not saved to disk.
 """
 
 import os
@@ -12,43 +13,26 @@ from matplotlib import pyplot as plt
 import glob
 import json
 
-# Import project-specific configuration to get data paths
-# Assuming 'source.config' is a valid module in your project structure.
-# If not, you might need to adjust the import or paths.
-try:
-    from source.config import locations
-except ImportError:
-    # Provide a fallback for standalone execution if config is not found
-    class MockLocations:
-        def get_dataset_dir(self):
-            return "path/to/your/slides"
-        def get_segmentation_output_dir(self):
-            return "output/segmentation"
-    locations = MockLocations()
-    print("Warning: 'source.config.locations' not found. Using mock paths.")
+from source.config import locations
 
 
 # --- Default Parameters for CLAM Segmentation & Tiling ---
-# These can be tuned for different datasets.
 DEFAULT_PARAMS = {
     # Segmentation parameters
-    "level": 6,                 # WSI level to use for segmentation (lower resolution).
-    "saturation_threshold": 20, # Threshold for the saturation channel in HSV.
-    "median_blur_size": 7,      # Kernel size for median blurring to remove noise.
-    "close_kernel_size": 7,     # Kernel size for morphological closing to fill holes.
-    "min_contour_area": 5000,   # Minimum pixel area for a contour to be considered tissue.
+    "level": 6,
+    "saturation_threshold": 20,
+    "median_blur_size": 7,
+    "close_kernel_size": 7,
+    "min_contour_area": 5000,
 
     # Tiling parameters
-    "tile_size": 256,               # Size of the tiles to extract (at level 0).
-    "tile_min_tissue_fraction": 0.5 # Minimum fraction of tissue required for a tile to be valid.
+    "tile_size": 256,
+    "tile_min_tissue_fraction": 0.5
 }
 
 def create_tissue_mask(wsi_path, params=DEFAULT_PARAMS):
     """
     Generates a binary tissue mask from a WSI using a CLAM-like algorithm.
-
-    This function creates both a low-resolution mask for visualization and a
-    full-resolution mask (level 0) for tiling.
 
     Args:
         wsi_path (str): Path to the WSI file.
@@ -56,50 +40,41 @@ def create_tissue_mask(wsi_path, params=DEFAULT_PARAMS):
 
     Returns:
         - np.ndarray: The full-scale binary tissue mask (at level 0).
-        - np.ndarray: The low-resolution binary tissue mask used for visualization.
-        - np.ndarray: The downsampled RGB thumbnail image used for segmentation.
-        - int: The WSI level used for processing the thumbnail.
+        - np.ndarray: The low-resolution binary tissue mask for visualization.
+        - np.ndarray: The downsampled RGB thumbnail image.
+        - int: The WSI level used for processing.
     """
     try:
         wsi = openslide.OpenSlide(wsi_path)
 
-        # Use a low-resolution level for speed, as defined in params
         level = params.get("level", DEFAULT_PARAMS["level"])
         if level >= wsi.level_count:
             level = wsi.level_count - 1
             print(f"Warning: Level {params['level']} not available. Using level {level}.")
 
-        # 1. Read WSI at a downsampled resolution (thumbnail)
         thumb = wsi.read_region((0, 0), level, wsi.level_dimensions[level])
         thumb_rgb = np.array(thumb.convert('RGB'))
 
-        # 2. Convert from RGB to HSV color space
         hsv_image = cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2HSV)
         saturation_channel = hsv_image[:, :, 1]
 
-        # 3. Median blurring to smooth edges
         blur_size = params.get("median_blur_size", DEFAULT_PARAMS["median_blur_size"])
         blurred_saturation = cv2.medianBlur(saturation_channel, blur_size)
-
-        # 4. Compute binary mask via thresholding the saturation channel
         sat_thresh = params.get("saturation_threshold", DEFAULT_PARAMS["saturation_threshold"])
         _, binary_mask = cv2.threshold(
             blurred_saturation, sat_thresh, 255, cv2.THRESH_BINARY
         )
 
-        # 5. Morphological closing to fill small gaps and holes
         close_kernel_size = params.get("close_kernel_size", DEFAULT_PARAMS["close_kernel_size"])
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_kernel_size, close_kernel_size))
         closed_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
 
-        # 6. Filter contours based on area to remove small artifacts
         contours, _ = cv2.findContours(closed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         min_area = params.get("min_contour_area", DEFAULT_PARAMS["min_contour_area"])
         low_res_mask = np.zeros_like(closed_mask)
         filtered_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
         cv2.drawContours(low_res_mask, filtered_contours, -1, (255), -1)
 
-        # 7. Resize the low-resolution mask to full scale (level 0)
         full_dims = wsi.level_dimensions[0]
         full_mask = cv2.resize(low_res_mask, (full_dims[0], full_dims[1]), interpolation=cv2.INTER_NEAREST)
 
@@ -114,52 +89,59 @@ def create_tissue_mask(wsi_path, params=DEFAULT_PARAMS):
         return None, None, None, None
 
 
-def get_tile_coordinates(mask, params=DEFAULT_PARAMS):
+def get_tile_coordinates_optimized(full_mask, low_res_mask, downsample_factor, params=DEFAULT_PARAMS):
     """
-    Generates valid tile coordinates from a full-scale tissue mask.
+    Generates valid tile coordinates from a full-scale tissue mask by searching
+    only within the bounding boxes of tissue regions found at low resolution.
 
     Args:
-        mask (np.ndarray): The full-scale binary tissue mask (values 0 or 255).
-        params (dict): Dictionary containing tiling parameters like 'tile_size'
-                       and 'tile_min_tissue_fraction'.
+        full_mask (np.ndarray): The full-scale binary tissue mask.
+        low_res_mask (np.ndarray): The low-resolution binary tissue mask.
+        downsample_factor (float): The downsampling factor from level 0 to the low-res level.
+        params (dict): Dictionary containing tiling parameters.
 
     Returns:
         list: A list of [x, y] coordinates for the top-left corner of each valid tile.
     """
     tile_size = params.get("tile_size", DEFAULT_PARAMS["tile_size"])
     min_frac = params.get("tile_min_tissue_fraction", DEFAULT_PARAMS["tile_min_tissue_fraction"])
+    min_tissue_pixels = tile_size * tile_size * min_frac
 
-    coordinates = []
-    mask_h, mask_w = mask.shape
-    min_tissue_pixels = (tile_size * tile_size * min_frac)
+    coordinates_set = set()
 
-    for y in range(0, mask_h, tile_size):
-        for x in range(0, mask_w, tile_size):
-            # Ensure the tile is fully within the mask bounds
-            if x + tile_size > mask_w or y + tile_size > mask_h:
-                continue
+    # Find contours on the low-resolution mask to identify tissue regions
+    contours, _ = cv2.findContours(low_res_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            tile_region = mask[y:y+tile_size, x:x+tile_size]
+    for contour in contours:
+        # Get the bounding box of the contour at low resolution
+        x_low, y_low, w_low, h_low = cv2.boundingRect(contour)
 
-            # Count non-zero (tissue) pixels. cv2.countNonZero is fast.
-            tissue_pixels = cv2.countNonZero(tile_region)
+        # Scale the bounding box to full resolution (level 0)
+        x_start = int(x_low * downsample_factor)
+        y_start = int(y_low * downsample_factor)
+        x_end = int((x_low + w_low) * downsample_factor)
+        y_end = int((y_low + h_low) * downsample_factor)
 
-            if tissue_pixels >= min_tissue_pixels:
-                coordinates.append([x, y])
+        # Align the start coordinates to the tile grid
+        x_start_grid = x_start - (x_start % tile_size)
+        y_start_grid = y_start - (y_start % tile_size)
 
-    return coordinates
+        # Iterate only within the scaled bounding box
+        for y in range(y_start_grid, y_end, tile_size):
+            for x in range(x_start_grid, x_end, tile_size):
+                tile_region = full_mask[y:y + tile_size, x:x + tile_size]
+                if tile_region.shape[0] != tile_size or tile_region.shape[1] != tile_size:
+                    continue
+
+                if cv2.countNonZero(tile_region) >= min_tissue_pixels:
+                    coordinates_set.add((x, y))
+
+    return sorted(list(coordinates_set))
 
 
 def visualize_segmentation(wsi_path, mask, thumb_rgb, level, output_path):
     """
-    Visualizes and saves the segmentation result, showing the tissue on a black background.
-
-    Args:
-        wsi_path (str): Path to the original WSI file.
-        mask (np.ndarray): The low-resolution binary tissue mask.
-        thumb_rgb (np.ndarray): The downsampled RGB thumbnail.
-        level (int): The WSI level used for processing.
-        output_path (str): Path to save the visualization image.
+    Visualizes and saves the segmentation result.
     """
     masked_thumb = thumb_rgb.copy()
     masked_thumb[mask == 0] = 0
@@ -188,21 +170,15 @@ def visualize_segmentation(wsi_path, mask, thumb_rgb, level, output_path):
 
 def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
     """
-    Processes all WSI TIF files, saves masks, visualizations, and tile coordinates.
-
-    Args:
-        params (dict): Parameters for the segmentation and tiling algorithms.
-        max_slides (int, optional): Maximum number of slides to process. Defaults to None (all slides).
+    Processes all WSI TIF files, saves artifacts, and extracts tile coordinates.
     """
     wsi_dir = locations.get_dataset_dir()
     output_base_dir = locations.get_segmentation_output_dir()
     os.makedirs(output_base_dir, exist_ok=True)
 
-    print(f"Searching for WSI files in: {wsi_dir}")
     wsi_files = sorted(glob.glob(os.path.join(wsi_dir, "*.tif")))
-
     if not wsi_files:
-        print("No .tif files found in the dataset directory.")
+        print(f"No .tif files found in the dataset directory: {wsi_dir}")
         return
 
     if max_slides is not None:
@@ -221,30 +197,30 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
 
             # --- Define output paths ---
             vis_path = os.path.join(slide_output_dir, f"{slide_name}_segmentation.png")
-            low_res_mask_path = os.path.join(slide_output_dir, f"{slide_name}_mask.png")
-            full_mask_path = os.path.join(slide_output_dir, f"{slide_name}_full_mask.png")
+            mask_path = os.path.join(slide_output_dir, f"{slide_name}_mask.png")
             coords_path = os.path.join(slide_output_dir, f"{slide_name}_tile_coords.json")
             params_path = os.path.join(slide_output_dir, f"{slide_name}_params.json")
 
             # --- Save artifacts ---
-            # 1. Save the visualization plot
             visualize_segmentation(wsi_path, low_res_mask, thumb_rgb, level, vis_path)
+            cv2.imwrite(mask_path, low_res_mask)
+            print(f"Saved low-resolution mask to: {mask_path}")
 
-            # 2. Save the low-resolution binary mask
-            cv2.imwrite(low_res_mask_path, low_res_mask)
-            print(f"Saved low-resolution mask to: {low_res_mask_path}")
+            # Get downsample factor for coordinate mapping
+            try:
+                with openslide.OpenSlide(wsi_path) as slide:
+                    downsample_factor = slide.level_downsamples[level]
+            except openslide.OpenSlideError as e:
+                print(f"Could not reopen slide to get downsample factor: {e}")
+                continue
 
-            # 3. Save the full-scale binary mask
-            print("Saving full-scale mask... (This might take a moment)")
-            cv2.imwrite(full_mask_path, full_mask)
-            print(f"Saved full-scale mask to: {full_mask_path}")
+            # Get and save tile coordinates using the optimized function
+            print("Extracting tile coordinates (optimized)...")
+            tile_coords = get_tile_coordinates_optimized(full_mask, low_res_mask, downsample_factor, params)
 
-            # 4. Get and save tile coordinates
-            print("Extracting tile coordinates...")
-            tile_coords = get_tile_coordinates(full_mask, params)
             coords_data = {
                 "tile_size": params.get("tile_size", DEFAULT_PARAMS["tile_size"]),
-                "tile_level": 0, # Coordinates are for level 0
+                "tile_level": 0,
                 "num_tiles": len(tile_coords),
                 "coordinates": tile_coords
             }
@@ -252,7 +228,6 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
                 json.dump(coords_data, f, indent=4)
             print(f"Saved {len(tile_coords)} tile coordinates to: {coords_path}")
 
-            # 5. Save the parameters to a JSON file
             params_to_save = params.copy()
             params_to_save['level_used'] = level
             with open(params_path, 'w') as f:
@@ -263,18 +238,8 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
 
     print("\n--- All slides processed successfully. ---")
 
-# --- Main block for standalone execution and debugging ---
 if __name__ == '__main__':
     print("--- Running segmentation script in standalone mode ---")
-
-    # Ensure the output directory exists for the test run
-    if isinstance(locations, MockLocations):
-        print("Using 'output/segmentation' as the base directory for results.")
-        os.makedirs(locations.get_segmentation_output_dir(), exist_ok=True)
-        print("Please ensure you have .tif files in 'path/to/your/slides' or update the path in the script.")
-
-    # By default, it runs with the default parameters on a small subset of slides.
-    print("\nUsing default parameters for segmentation and tiling.")
     process_all_slides(max_slides=2)
 
     print("\n--- Standalone script execution finished. ---")
