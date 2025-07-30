@@ -12,6 +12,7 @@ CONCH_MODEL_PATH = "/autofs/space/crater_001/tools/wsi_encoders/conch_v15.bin"
 
 # --- Project-specific Subdirectories ---
 ANALYSIS_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "outputs/analysis")
+SEGMENTATION_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "outputs/segmentation")
 CACHE_DIR = os.path.join(PRIMARY_BASE_DIR, "cache")
 LABELS_DIR = os.path.join(PRIMARY_BASE_DIR, "labels")
 FEATURES_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "features/conch15")
@@ -35,8 +36,6 @@ def _create_dir_with_fallback(primary_path, fallback_subdir_name):
 
 def get_output_dir():
     """Get the configured output directory for analysis results."""
-    # Note: The original 'FIGURES_DIR' is now 'ANALYSIS_OUTPUT_DIR' for clarity.
-    # The fallback is 'outputs/analysis' to better reflect its purpose.
     return _create_dir_with_fallback(ANALYSIS_OUTPUT_DIR, 'outputs/analysis')
 
 def get_cache_dir():
@@ -50,6 +49,10 @@ def get_dataset_dir():
 def get_labels_dir():
     """Get the configured labels directory."""
     return _create_dir_with_fallback(LABELS_DIR, 'labels')
+
+def get_segmentation_output_dir():
+    """Get the configured output directory for segmentation results."""
+    return _create_dir_with_fallback(SEGMENTATION_OUTPUT_DIR, 'outputs/segmentation')
 
 def get_features_output_dir():
     """Get the configured features output directory."""
