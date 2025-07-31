@@ -89,58 +89,8 @@ def create_tissue_mask(wsi_path, params=DEFAULT_PARAMS):
         return None, None, None, None
 
 
-def get_tile_coordinates_optimized(full_mask, low_res_mask, downsample_factor, params=DEFAULT_PARAMS):
-    """
-    Generates valid tile coordinates from a full-scale tissue mask by searching
-    only within the bounding boxes of tissue regions found at low resolution.
-
-    Args:
-        full_mask (np.ndarray): The full-scale binary tissue mask.
-        low_res_mask (np.ndarray): The low-resolution binary tissue mask.
-        downsample_factor (float): The downsampling factor from level 0 to the low-res level.
-        params (dict): Dictionary containing tiling parameters.
-
-    Returns:
-        list: A list of [x, y] coordinates for the top-left corner of each valid tile.
-    """
-    tile_size = params.get("tile_size", DEFAULT_PARAMS["tile_size"])
-    min_frac = params.get("tile_min_tissue_fraction", DEFAULT_PARAMS["tile_min_tissue_fraction"])
-    min_tissue_pixels = tile_size * tile_size * min_frac
-
-    coordinates_set = set()
-
-    # Find contours on the low-resolution mask to identify tissue regions
-    contours, _ = cv2.findContours(low_res_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    for contour in contours:
-        # Get the bounding box of the contour at low resolution
-        x_low, y_low, w_low, h_low = cv2.boundingRect(contour)
-
-        # Scale the bounding box to full resolution (level 0)
-        x_start = int(x_low * downsample_factor)
-        y_start = int(y_low * downsample_factor)
-        x_end = int((x_low + w_low) * downsample_factor)
-        y_end = int((y_low + h_low) * downsample_factor)
-
-        # Align the start coordinates to the tile grid
-        x_start_grid = x_start - (x_start % tile_size)
-        y_start_grid = y_start - (y_start % tile_size)
-
-        # Iterate only within the scaled bounding box
-        for y in range(y_start_grid, y_end, tile_size):
-            for x in range(x_start_grid, x_end, tile_size):
-                tile_region = full_mask[y:y + tile_size, x:x + tile_size]
-                if tile_region.shape[0] != tile_size or tile_region.shape[1] != tile_size:
-                    continue
-
-                if cv2.countNonZero(tile_region) >= min_tissue_pixels:
-                    coordinates_set.add((x, y))
-
-    return sorted(list(coordinates_set))
-
-
-def get_tile_coordinates_integral(full_mask, low_res_mask, downsample_factor, params=DEFAULT_PARAMS):
-    """Faster tile coordinate generation using integral images.
+def get_tile_coordinates(full_mask, low_res_mask, downsample_factor, params=DEFAULT_PARAMS):
+    """Generate tile coordinates using an integral-image approach.
 
     The search is restricted to the tissue bounding boxes obtained at low
     resolution and uses an integral image to quickly compute the tissue
@@ -264,7 +214,7 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
 
             # Get and save tile coordinates using the integral image implementation
             print("Extracting tile coordinates (fast)...")
-            tile_coords = get_tile_coordinates_integral(full_mask, low_res_mask, downsample_factor, params)
+            tile_coords = get_tile_coordinates(full_mask, low_res_mask, downsample_factor, params)
 
             coords_data = {
                 "tile_size": params.get("tile_size", DEFAULT_PARAMS["tile_size"]),
