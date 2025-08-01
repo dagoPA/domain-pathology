@@ -1,20 +1,33 @@
 """
-Simple configuration file for domain-pathology project.
+Centralized configuration file for the pathology scripts.
 """
 
-# Simple configuration - keeping it minimal as requested
+# -----------------------------------------------------------------------------
+# Segmentation Parameters (for segmentation.py)
+# -----------------------------------------------------------------------------
+# Kernel size for the median blur filter.
+SEG_MEDIAN_BLUR_SIZE = 7
 
-# Feature extraction configuration
-PATCH_SIZE = 256  # Configurable patch size for feature extraction
+# Kernel size for the morphological closing operation.
+SEG_CLOSE_KERNEL_SIZE = 7
 
-# Tissue segmentation configuration - default parameters
-USE_TISSUE_SEGMENTATION = True
-SEG_LEVEL = 9
-STHRESH = 20
-STHRESH_UP = 255
-MTHRESH = 7
-CLOSE = 0
-USE_OTSU = False
-FILTER_PARAMS = {'a_t': 100, 'a_h': 16, 'max_n_holes': 8}
-REF_PATCH_SIZE = 512
-EXCLUDE_IDS = []
+# Minimum area in pixels (at the thumbnail level) for a contour to be
+# considered valid tissue.
+SEG_MIN_CONTOUR_AREA = 1000
+
+
+# -----------------------------------------------------------------------------
+# Tiling Parameters (for tiling.py)
+# -----------------------------------------------------------------------------
+# Final size of each patch in pixels (e.g., 256x256).
+TILE_PATCH_SIZE = 256
+
+# Target magnification at which patches are extracted (e.g., 20x).
+TILE_MAGNIFICATION = 20
+
+# Pixel overlap between adjacent patches.
+TILE_OVERLAP = 0
+
+# Minimum proportion of tissue that a patch must contain to be considered
+# valid (e.g., 0.5 = 50% of the patch area).
+TILE_TISSUE_THRESHOLD = 0.5
