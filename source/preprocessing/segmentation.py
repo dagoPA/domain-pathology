@@ -150,9 +150,18 @@ def save_contours_as_geojson(contours, wsi_path, level, output_path):
     print(f"Contours saved in GeoJSON format to: {output_path}")
 
 
-def visualize_segmentation(wsi_path, low_res_mask, thumb_rgb, level, output_path):
+def visualize_segmentation(wsi_path, low_res_mask, thumb_rgb, level, output_path, save_figure=False, show_figure=False):
     """
-    Visualizes and saves the low-resolution segmentation result using Matplotlib.
+    Generates and optionally saves or shows the low-resolution segmentation result.
+
+    Args:
+        wsi_path (str): Path to the WSI file.
+        low_res_mask (np.ndarray): The binary segmentation mask.
+        thumb_rgb (np.ndarray): The thumbnail image.
+        level (int): The WSI level used.
+        output_path (str): Path to save the figure.
+        save_figure (bool): If True, saves the figure to disk.
+        show_figure (bool): If True, displays the figure in a window.
     """
     # Create a copy of the thumbnail to draw on, preserving the original array.
     masked_thumb = thumb_rgb.copy()
@@ -176,18 +185,26 @@ def visualize_segmentation(wsi_path, low_res_mask, thumb_rgb, level, output_path
     axes[2].axis('off')
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig(output_path)
-    plt.close(fig)
-    print(f"Visualization saved to: {output_path}")
 
-def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
+    if save_figure:
+        plt.savefig(output_path)
+        print(f"Visualization saved to: {output_path}")
+
+    if show_figure:
+        print("Displaying plot for the first slide...")
+        plt.show()
+
+    plt.close(fig)
+
+def process_all_slides(params=DEFAULT_PARAMS, max_slides=None, save_visualization=True, show_first_slide=True):
     """
-    Processes all WSI .tif files and saves the segmentation artifacts
-    based on the thumbnail.
+    Processes all WSI .tif files and saves the segmentation artifacts.
 
     Args:
         params (dict): Parameters for the segmentation algorithm.
-        max_slides (int, optional): Maximum number of slides to process. Defaults to None.
+        max_slides (int, optional): Maximum number of slides to process.
+        save_visualization (bool): If True, saves the visualization PNG files.
+        show_first_slide (bool): If True, shows the plot for the first slide processed.
     """
     wsi_dir = locations.get_dataset_dir()
     output_base_dir = locations.get_segmentation_output_dir()
@@ -202,7 +219,7 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
         wsi_files = wsi_files[:max_slides]
         print(f"Processing a subset of {len(wsi_files)} slides.")
 
-    for wsi_path in wsi_files:
+    for i, wsi_path in enumerate(wsi_files):
         print(f"\n--- Processing: {os.path.basename(wsi_path)} ---")
 
         low_res_mask, thumb_rgb, contours, level = create_tissue_mask(wsi_path, params)
@@ -216,19 +233,26 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
             vis_path = os.path.join(slide_output_dir, f"{slide_name}_visualization.png")
             low_mask_path = os.path.join(slide_output_dir, f"{slide_name}_low_res_mask.png")
             params_path = os.path.join(slide_output_dir, f"{slide_name}_params.json")
-            geojson_path = os.path.join(slide_output_dir, f"{slide_name}_contours.geojson") # New path for GeoJSON
+            geojson_path = os.path.join(slide_output_dir, f"{slide_name}_contours.geojson")
 
             # --- Save artifacts ---
-            visualize_segmentation(wsi_path, low_res_mask, thumb_rgb, level, vis_path)
+            # Determine if the plot should be shown for this specific slide
+            should_show_plot = (i == 0 and show_first_slide)
+
+            # Generate the visualization if it needs to be saved or shown
+            if save_visualization or should_show_plot:
+                visualize_segmentation(
+                    wsi_path, low_res_mask, thumb_rgb, level, vis_path,
+                    save_figure=save_visualization,
+                    show_figure=should_show_plot
+                )
 
             cv2.imwrite(low_mask_path, low_res_mask)
             print(f"Low-resolution mask saved to: {low_mask_path}")
 
-            # Save contours to GeoJSON
             if contours:
                 save_contours_as_geojson(contours, wsi_path, level, geojson_path)
 
-            # Save parameters
             params_to_save = params.copy()
             params_to_save['level_used'] = level
             with open(params_path, 'w') as f:
@@ -242,7 +266,9 @@ def process_all_slides(params=DEFAULT_PARAMS, max_slides=None):
 if __name__ == '__main__':
     # This block allows the script to be run directly from the command line.
     # It's useful for testing the segmentation on a small number of slides.
-    # The `max_slides` parameter limits how many WSI files are processed.
     print("--- Running segmentation script in standalone mode ---")
-    process_all_slides(max_slides=5)
+
+    # By default, this will save the visualization and show the plot for the first slide.
+    process_all_slides(max_slides=2, save_visualization=True, show_first_slide=True)
+
     print("\n--- Standalone script execution finished. ---")
