@@ -13,6 +13,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from transformers import AutoModel
+from huggingface_hub import hf_hub_download
 
 from source.config import locations
 from source.config import config
@@ -23,6 +24,9 @@ from source.config import config
 print("--- Authenticating with Hugging Face Hub ---")
 
 class PatchDataset(Dataset):
+    """
+    A PyTorch Dataset to load patches from a Whole Slide Image (WSI).
+    """
     def __init__(self, wsi, coords, patch_size_level0, transform):
         self.wsi = wsi
         self.coords = coords
@@ -34,11 +38,15 @@ class PatchDataset(Dataset):
 
     def __getitem__(self, idx):
         x, y = self.coords[idx]
+        # Read region from level 0, convert to RGB
         patch_pil = self.wsi.read_region((x, y), 0, self.patch_size_level0).convert("RGB")
         return self.transform(patch_pil)
 
 # --- Stage 1: Patch-Level Feature Extraction using CONCH ---
 def extract_patch_features(wsi_path, coords_csv_path, output_h5_path, model, transform, device, params):
+    """
+    Extracts features from patches of a WSI using the CONCH model.
+    """
     print(f"  Stage 1: Extracting patch features for {os.path.basename(wsi_path)}")
     try:
         wsi = openslide.OpenSlide(wsi_path)
@@ -50,18 +58,20 @@ def extract_patch_features(wsi_path, coords_csv_path, output_h5_path, model, tra
     try:
         base_mag = float(wsi.properties[openslide.PROPERTY_NAME_OBJECTIVE_POWER])
     except (KeyError, ValueError):
+        print("  Warning: Objective power not found in WSI properties. Assuming 40.0x.")
         base_mag = 40.0
 
     patch_size_read_level0 = int(params["feat_patch_size"] * (base_mag / config.TILE_MAGNIFICATION))
     dataset = PatchDataset(wsi, coordinates, patch_size_read_level0, transform)
-    dataloader = DataLoader(dataset, batch_size=params["feat_batch_size"], num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=params["feat_batch_size"], num_workers=4, pin_memory=True)
 
     all_features = []
     model.eval()
-    with torch.no_grad():
+    # Use autocast for mixed-precision inference on CUDA for better performance
+    with torch.autocast('cuda' if device == 'cuda' else 'cpu', dtype=torch.float16 if device == 'cuda' else torch.bfloat16), torch.inference_mode():
         for i, patch_batch in enumerate(dataloader):
             print(f"\r    Processing patch batch {i+1}/{len(dataloader)}", end="")
-            patch_batch = patch_batch.to(device, dtype=torch.float16 if device == 'cuda' else torch.float32)
+            patch_batch = patch_batch.to(device, non_blocking=True)
             features = model(patch_batch)
             all_features.append(features.cpu().numpy())
     print()
@@ -70,7 +80,9 @@ def extract_patch_features(wsi_path, coords_csv_path, output_h5_path, model, tra
     try:
         with h5py.File(output_h5_path, 'w') as hf:
             hf.create_dataset('features', data=features_np)
-            hf.create_dataset('coords', data=coordinates)
+            coords_dataset = hf.create_dataset('coords', data=coordinates)
+            # Save the patch size as an attribute, as required by the TITAN model's specific method.
+            coords_dataset.attrs['patch_size_level0'] = patch_size_read_level0
         print(f"  Patch features saved to: {output_h5_path}")
         wsi.close()
         return True
@@ -81,19 +93,30 @@ def extract_patch_features(wsi_path, coords_csv_path, output_h5_path, model, tra
 
 # --- Stage 2: Slide-Level Feature Extraction using TITAN ---
 def extract_slide_feature(patch_h5_path, output_npy_path, model, device):
+    """
+    Aggregates patch features into a single slide-level feature using TITAN's specific method.
+    """
     print(f"  Stage 2: Aggregating features with TITAN for {os.path.basename(patch_h5_path)}")
     try:
         with h5py.File(patch_h5_path, 'r') as hf:
+            # Load features, coordinates, and the patch size attribute.
             patch_features = torch.from_numpy(hf['features'][:])
+            coords = torch.from_numpy(hf['coords'][:])
+            patch_size_lv0 = hf['coords'].attrs['patch_size_level0']
     except Exception as e:
         print(f"  Error reading H5 file: {e}")
         return
 
     model.eval()
-    with torch.no_grad():
-        patch_features = patch_features.unsqueeze(0).to(device)
-        slide_feature = model.forward_slide_features(patch_features)
-        slide_feature_np = slide_feature.cpu().numpy()
+    # Use autocast and inference_mode for performance, as shown in the official example.
+    with torch.autocast('cuda' if device == 'cuda' else 'cpu', dtype=torch.float16 if device == 'cuda' else torch.bfloat16), torch.inference_mode():
+        patch_features = patch_features.to(device)
+        coords = coords.to(device)
+
+        # Use the model-specific 'encode_slide_from_patch_features' method.
+        slide_embedding = model.encode_slide_from_patch_features(patch_features, coords, patch_size_lv0)
+
+        slide_feature_np = slide_embedding.cpu().numpy()
 
     try:
         np.save(output_npy_path, slide_feature_np)
@@ -103,19 +126,19 @@ def extract_slide_feature(patch_h5_path, output_npy_path, model, device):
 
 
 def process_all_slides(max_slides=None):
-    # --- Load Official Models ---
+    """
+    Main function to orchestrate the two-stage feature extraction for all slides.
+    """
     print("--- Loading official Mahmood Lab models from Hugging Face ---")
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"--- Using device: {device} ---")
+
     try:
         titan_model = AutoModel.from_pretrained('MahmoodLab/TITAN', trust_remote_code=True)
         conch_model, conch_transform = titan_model.return_conch()
 
         titan_model = titan_model.to(device)
         conch_model = conch_model.to(device)
-
-        if device == 'cuda':
-            titan_model.half()
-            conch_model.half()
         print("Models loaded successfully.")
     except Exception as e:
         print(f"Fatal Error: Could not load models. {e}")
@@ -130,6 +153,10 @@ def process_all_slides(max_slides=None):
     segmentation_base_dir = locations.get_segmentation_output_dir()
     segmentation_dirs = sorted([d for d in glob.glob(os.path.join(segmentation_base_dir, "*")) if os.path.isdir(d)])
 
+    if not segmentation_dirs:
+        print("Warning: No segmentation directories found. Please ensure your data is structured correctly.")
+        print(f"Searched in: {segmentation_base_dir}")
+
     if max_slides is not None:
         segmentation_dirs = segmentation_dirs[:max_slides]
 
@@ -139,11 +166,11 @@ def process_all_slides(max_slides=None):
 
         wsi_path = os.path.join(wsi_dir, f"{slide_name}.tif")
         coords_csv_path = os.path.join(slide_dir, "coordinates.csv")
-        patch_h5_path = os.path.join(slide_dir, "features_conch_v15.h5")
+        patch_h5_path = os.path.join(slide_dir, "features_conch.h5")
         slide_npy_path = os.path.join(slide_dir, "feature_slide_titan.npy")
 
         if not os.path.exists(wsi_path) or not os.path.exists(coords_csv_path):
-            print("  Skipping: Missing WSI or coordinates.csv file.")
+            print(f"  Skipping: Missing WSI or coordinates.csv file.")
             continue
 
         if os.path.exists(patch_h5_path):
@@ -160,8 +187,8 @@ def process_all_slides(max_slides=None):
 
     print("\n--- All slides have been processed. ---")
 
-
 if __name__ == '__main__':
     print("--- Running 2-stage feature extraction script in standalone mode ---")
-    process_all_slides(max_slides=2)
+    # To process only a subset of slides for testing, you can pass a number, e.g., process_all_slides(max_slides=2)
+    process_all_slides()
     print("\n--- Standalone script execution finished. ---")
