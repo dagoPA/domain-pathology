@@ -3,6 +3,12 @@ Centralized configuration file for the pathology scripts.
 """
 
 # -----------------------------------------------------------------------------
+# General WSI Parameters
+# -----------------------------------------------------------------------------
+# Base magnification for the dataset (e.g., CAMELYON17 is 40x)
+WSI_BASE_MAGNIFICATION = 40.0
+
+# -----------------------------------------------------------------------------
 # Segmentation Parameters (for segmentation.py)
 # -----------------------------------------------------------------------------
 SEG_MEDIAN_BLUR_SIZE = 7
@@ -15,7 +21,7 @@ SEG_MIN_CONTOUR_AREA = 1000
 TILE_PATCH_SIZE = 448
 TILE_MAGNIFICATION = 20
 TILE_OVERLAP = 0
-TILE_TISSUE_THRESHOLD = 0.5
+TILE_TISSUE_THRESHOLD = 0.1
 
 # -----------------------------------------------------------------------------
 # Feature Extraction Parameters (for feature_extraction.py)

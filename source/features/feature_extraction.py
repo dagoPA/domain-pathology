@@ -55,11 +55,8 @@ def extract_patch_features(wsi_path, coords_csv_path, output_h5_path, model, tra
         print(f"  Error opening files: {e}")
         return False
 
-    try:
-        base_mag = float(wsi.properties[openslide.PROPERTY_NAME_OBJECTIVE_POWER])
-    except (KeyError, ValueError):
-        print("  Warning: Objective power not found in WSI properties. Assuming 40.0x.")
-        base_mag = 40.0
+    # The base magnification is now consistently read from the config file.
+    base_mag = config.WSI_BASE_MAGNIFICATION
 
     patch_size_read_level0 = int(params["feat_patch_size"] * (base_mag / config.TILE_MAGNIFICATION))
     dataset = PatchDataset(wsi, coordinates, patch_size_read_level0, transform)
@@ -74,7 +71,7 @@ def extract_patch_features(wsi_path, coords_csv_path, output_h5_path, model, tra
             patch_batch = patch_batch.to(device, non_blocking=True)
             features = model(patch_batch)
             all_features.append(features.cpu().numpy())
-    print()
+    print() # Newline after the progress bar
 
     features_np = np.vstack(all_features)
     try:
