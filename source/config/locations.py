@@ -13,9 +13,11 @@ CONCH_MODEL_PATH = "/autofs/space/crater_001/tools/wsi_encoders/conch_v15.bin"
 # --- Project-specific Subdirectories ---
 ANALYSIS_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "outputs/analysis")
 SEGMENTATION_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "outputs/segmentation")
+TILING_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "outputs/tiling")
 CACHE_DIR = os.path.join(PRIMARY_BASE_DIR, "cache")
 LABELS_DIR = os.path.join(PRIMARY_BASE_DIR, "labels")
-FEATURES_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "features/conch15")
+CONCH_FEATURES_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "features/conch15") # Renamed for clarity
+TITAN_FEATURES_OUTPUT_DIR = os.path.join(PRIMARY_BASE_DIR, "features/titan")   # ADDED: New directory for TITAN features
 
 
 def _create_dir_with_fallback(primary_path, fallback_subdir_name):
@@ -54,9 +56,17 @@ def get_segmentation_output_dir():
     """Get the configured output directory for segmentation results."""
     return _create_dir_with_fallback(SEGMENTATION_OUTPUT_DIR, 'outputs/segmentation')
 
-def get_features_output_dir():
-    """Get the configured features output directory."""
-    return _create_dir_with_fallback(FEATURES_OUTPUT_DIR, 'features/conch15')
+def get_tiling_output_dir():
+    """Get the configured output directory for tiling results."""
+    return _create_dir_with_fallback(TILING_OUTPUT_DIR, 'outputs/tiling')
+
+def get_conch_features_output_dir():
+    """Get the configured features output directory for CONCH patch features."""
+    return _create_dir_with_fallback(CONCH_FEATURES_OUTPUT_DIR, 'features/conch15')
+
+def get_titan_features_output_dir():
+    """Get the configured features output directory for TITAN slide features."""
+    return _create_dir_with_fallback(TITAN_FEATURES_OUTPUT_DIR, 'features/titan')
 
 def get_labels_csv_path():
     """Get the path to the CAMELYON17 labels CSV file."""

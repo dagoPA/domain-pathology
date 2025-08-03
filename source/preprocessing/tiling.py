@@ -166,6 +166,7 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
 
     wsi_dir = locations.get_dataset_dir()
     segmentation_base_dir = locations.get_segmentation_output_dir()
+    tiling_base_dir = locations.get_tiling_output_dir() # Get the new tiling output directory
     segmentation_dirs = sorted([d for d in glob.glob(os.path.join(segmentation_base_dir, "*")) if os.path.isdir(d)])
 
     if not segmentation_dirs:
@@ -176,14 +177,17 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
         segmentation_dirs = segmentation_dirs[:max_slides]
         print(f"Processing a subset of {len(segmentation_dirs)} slides.")
 
-    for i, slide_dir in enumerate(segmentation_dirs):
-        slide_name = os.path.basename(slide_dir)
+    for i, seg_slide_dir in enumerate(segmentation_dirs):
+        slide_name = os.path.basename(seg_slide_dir)
         print(f"\n--- Processing: {slide_name} ---")
 
         wsi_path = os.path.join(wsi_dir, f"{slide_name}.tif")
-        geojson_path = os.path.join(slide_dir, f"{slide_name}_contours.geojson")
-        coords_output_path = os.path.join(slide_dir, "coordinates.csv")
-        vis_output_path = os.path.join(slide_dir, f"{slide_name}_tiling_grid_visualization.png") # Changed name for clarity
+        geojson_path = os.path.join(seg_slide_dir, f"{slide_name}_contours.geojson") # Read from segmentation dir
+
+        # Define output paths in the new tiling directory
+        tiling_output_slide_dir = os.path.join(tiling_base_dir, slide_name)
+        coords_output_path = os.path.join(tiling_output_slide_dir, "coordinates.csv")
+        vis_output_path = os.path.join(tiling_output_slide_dir, f"{slide_name}_tiling_grid_visualization.png")
 
         if not (os.path.exists(wsi_path) and os.path.exists(geojson_path)):
             print(f"  Error: Missing WSI or GeoJSON file for {slide_name}.")
