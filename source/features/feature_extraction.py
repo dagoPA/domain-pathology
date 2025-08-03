@@ -13,7 +13,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from transformers import AutoModel
-from huggingface_hub import hf_hub_download
 
 from source.config import locations
 from source.config import config
@@ -184,8 +183,9 @@ def process_all_slides(max_slides=None):
 
     print("\n--- All slides have been processed. ---")
 
+
 if __name__ == '__main__':
     print("--- Running 2-stage feature extraction script in standalone mode ---")
     # To process only a subset of slides for testing, you can pass a number, e.g., process_all_slides(max_slides=2)
-    process_all_slides()
+    process_all_slides(max_slides=1)
     print("\n--- Standalone script execution finished. ---")
