@@ -74,6 +74,7 @@ def extract_patch_features(wsi_path, coords_csv_path, output_h5_path, model, tra
 
     features_np = np.vstack(all_features)
     try:
+        os.makedirs(os.path.dirname(output_h5_path), exist_ok=True)
         with h5py.File(output_h5_path, 'w') as hf:
             hf.create_dataset('features', data=features_np)
             coords_dataset = hf.create_dataset('coords', data=coordinates)
@@ -115,6 +116,7 @@ def extract_slide_feature(patch_h5_path, output_npy_path, model, device):
         slide_feature_np = slide_embedding.cpu().numpy()
 
     try:
+        os.makedirs(os.path.dirname(output_npy_path), exist_ok=True)
         np.save(output_npy_path, slide_feature_np)
         print(f"  Slide feature saved to: {output_npy_path}")
     except Exception as e:
@@ -145,8 +147,14 @@ def process_all_slides(max_slides=None):
         "feat_batch_size": config.FEAT_BATCH_SIZE,
     }
 
+    labels_df = pd.read_csv(locations.get_labels_csv_path())
+    slide_to_domain = pd.Series(labels_df.domain.values, index=labels_df.slide_id).to_dict()
+
     wsi_dir = locations.get_dataset_dir()
     segmentation_base_dir = locations.get_segmentation_output_dir()
+    conch_output_dir = locations.get_conch_features_output_dir()
+    titan_output_dir = locations.get_titan_features_output_dir()
+
     segmentation_dirs = sorted([d for d in glob.glob(os.path.join(segmentation_base_dir, "*")) if os.path.isdir(d)])
 
     if not segmentation_dirs:
@@ -162,8 +170,14 @@ def process_all_slides(max_slides=None):
 
         wsi_path = os.path.join(wsi_dir, f"{slide_name}.tif")
         coords_csv_path = os.path.join(slide_dir, "coordinates.csv")
-        patch_h5_path = os.path.join(slide_dir, "features_conch.h5")
-        slide_npy_path = os.path.join(slide_dir, "feature_slide_titan.npy")
+        
+        # CLAM structure for CONCH features
+        patch_h5_path = os.path.join(conch_output_dir, slide_name, "features_conch.h5")
+
+        # DomainBed structure for TITAN features
+        domain = slide_to_domain.get(slide_name, "unknown_domain")
+        titan_domain_dir = os.path.join(titan_output_dir, domain)
+        slide_npy_path = os.path.join(titan_domain_dir, f"{slide_name}.npy")
 
         if not os.path.exists(wsi_path) or not os.path.exists(coords_csv_path):
             print(f"  Skipping: Missing WSI or coordinates.csv file.")
