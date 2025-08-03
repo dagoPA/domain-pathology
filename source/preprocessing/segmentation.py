@@ -115,7 +115,8 @@ def save_contours_as_geojson(contours, wsi_path, level, output_path):
         features.append(feature)
 
     feature_collection = {"type": "FeatureCollection", "features": features}
-
+    
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as f:
         json.dump(feature_collection, f, indent=4)
     print(f"Contours saved in GeoJSON format to: {output_path}")
@@ -153,6 +154,7 @@ def visualize_segmentation(wsi_path, low_res_mask, thumb_rgb, level, output_path
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
     if save_figure:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.savefig(output_path)
         print(f"Visualization saved to: {output_path}")
 
@@ -175,8 +177,8 @@ def process_all_slides(max_slides=None, save_visualization=False, show_first_sli
     }
 
     wsi_dir = locations.get_dataset_dir()
-    output_base_dir = locations.get_segmentation_output_dir()
-    os.makedirs(output_base_dir, exist_ok=True)
+    segmentation_base_dir = locations.get_segmentation_output_dir()
+    visualizations_base_dir = locations.get_visualizations_output_dir()
 
     wsi_files = sorted(glob.glob(os.path.join(wsi_dir, "*.tif")))
     if not wsi_files:
@@ -194,12 +196,13 @@ def process_all_slides(max_slides=None, save_visualization=False, show_first_sli
 
         if low_res_mask is not None:
             slide_name = os.path.splitext(os.path.basename(wsi_path))[0]
-            slide_output_dir = os.path.join(output_base_dir, slide_name)
-            os.makedirs(slide_output_dir, exist_ok=True)
-
+            
             # Define output paths
-            vis_path = os.path.join(slide_output_dir, f"{slide_name}_visualization.png")
-            geojson_path = os.path.join(slide_output_dir, f"{slide_name}_contours.geojson")
+            segmentation_slide_dir = os.path.join(segmentation_base_dir, slide_name)
+            geojson_path = os.path.join(segmentation_slide_dir, f"{slide_name}_contours.geojson")
+
+            visualizations_slide_dir = os.path.join(visualizations_base_dir, slide_name)
+            vis_path = os.path.join(visualizations_slide_dir, f"{slide_name}_segmentation_visualization.png")
 
             # Save artifacts
             should_show_plot = (i == 0 and show_first_slide)

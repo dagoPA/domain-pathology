@@ -84,6 +84,7 @@ def visualize_grid_on_wsi(wsi, wsi_path, geojson_path, valid_coords, params, out
         plt.tight_layout()
 
         if output_path:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             plt.savefig(output_path)
             print(f"  Visualization saved to: {output_path}")
 
@@ -166,7 +167,9 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
 
     wsi_dir = locations.get_dataset_dir()
     segmentation_base_dir = locations.get_segmentation_output_dir()
-    tiling_base_dir = locations.get_tiling_output_dir() # Get the new tiling output directory
+    tiling_base_dir = locations.get_tiling_output_dir()
+    visualizations_base_dir = locations.get_visualizations_output_dir()
+
     segmentation_dirs = sorted([d for d in glob.glob(os.path.join(segmentation_base_dir, "*")) if os.path.isdir(d)])
 
     if not segmentation_dirs:
@@ -182,12 +185,13 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
         print(f"\n--- Processing: {slide_name} ---")
 
         wsi_path = os.path.join(wsi_dir, f"{slide_name}.tif")
-        geojson_path = os.path.join(seg_slide_dir, f"{slide_name}_contours.geojson") # Read from segmentation dir
+        geojson_path = os.path.join(seg_slide_dir, f"{slide_name}_contours.geojson")
 
-        # Define output paths in the new tiling directory
         tiling_output_slide_dir = os.path.join(tiling_base_dir, slide_name)
         coords_output_path = os.path.join(tiling_output_slide_dir, "coordinates.csv")
-        vis_output_path = os.path.join(tiling_output_slide_dir, f"{slide_name}_tiling_grid_visualization.png")
+        
+        visualizations_slide_dir = os.path.join(visualizations_base_dir, slide_name)
+        vis_output_path = os.path.join(visualizations_slide_dir, f"{slide_name}_tiling_grid_visualization.png")
 
         if not (os.path.exists(wsi_path) and os.path.exists(geojson_path)):
             print(f"  Error: Missing WSI or GeoJSON file for {slide_name}.")

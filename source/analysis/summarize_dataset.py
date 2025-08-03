@@ -7,7 +7,7 @@ from io import BytesIO
 import boto3
 from botocore.config import Config
 from botocore import UNSIGNED
-from source.config.locations import get_output_dir, get_labels_dir
+from source.config.locations import get_visualizations_output_dir, get_labels_dir
 
 def generate_full_c17_dataframe():
 	"""
@@ -127,7 +127,7 @@ def generate_dataset_statistics():
 	WASABI_ENDPOINT_URL = 'https://s3.ap-northeast-1.wasabisys.com'
 	BUCKET_NAME = 'gigadb-datasets'
 	PREFIX = 'live/pub/10.5524/100001_101000/100439'
-	output_dir = get_output_dir()
+	output_dir = get_visualizations_output_dir()
 
 	# 1. Generate the complete 1000-slide map of the dataset
 	master_df = generate_full_c17_dataframe()
