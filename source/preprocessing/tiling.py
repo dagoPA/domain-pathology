@@ -154,7 +154,7 @@ def calculate_and_save_coords(wsi_path, geojson_path, output_csv_path, params, v
     wsi.close()
 
 
-def process_all_slides(max_slides=None, show_first_slide_tiling=False):
+def process_all_slides(max_slides=None, visualize_tiling=False, show_tiling_figure=False):
     """
     Finds all segmentation results and runs the coordinate calculation process.
     """
@@ -197,16 +197,16 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
             print(f"  Error: Missing WSI or GeoJSON file for {slide_name}.")
             continue
 
-        should_visualize = (i == 0 and show_first_slide_tiling)
+        should_show = (i == 0 and show_tiling_figure)
 
         calculate_and_save_coords(
             wsi_path=wsi_path,
             geojson_path=geojson_path,
             output_csv_path=coords_output_path,
             params=params,
-            visualize=should_visualize,
+            visualize=visualize_tiling,
             vis_output_path=vis_output_path,
-            show_figure=should_visualize
+            show_figure=should_show
         )
 
     print("\n--- All slides have been processed. ---")
@@ -214,5 +214,5 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
 
 if __name__ == '__main__':
     print("--- Running coordinate calculation script in standalone mode ---")
-    process_all_slides(max_slides=2, show_first_slide_tiling=True)
+    process_all_slides(max_slides=2, visualize_tiling=True, show_tiling_figure=True)
     print("\n--- Standalone script execution finished. ---")

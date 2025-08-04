@@ -148,10 +148,11 @@ def process_all_slides(max_slides=None):
     }
 
     labels_df = pd.read_csv(locations.get_labels_csv_path())
-    slide_to_domain = pd.Series(labels_df.domain.values, index=labels_df.slide_id).to_dict()
+    slide_to_domain = pd.Series(labels_df.domain.values, index=labels_df.slide).to_dict()
 
     wsi_dir = locations.get_dataset_dir()
     segmentation_base_dir = locations.get_segmentation_output_dir()
+    tiling_base_dir = locations.get_tiling_output_dir()
     conch_output_dir = locations.get_conch_features_output_dir()
     titan_output_dir = locations.get_titan_features_output_dir()
 
@@ -169,13 +170,16 @@ def process_all_slides(max_slides=None):
         print(f"\n--- Processing: {slide_name} ---")
 
         wsi_path = os.path.join(wsi_dir, f"{slide_name}.tif")
-        coords_csv_path = os.path.join(slide_dir, "coordinates.csv")
+        
+        # Corrected path for coordinates.csv
+        tiling_slide_dir = os.path.join(tiling_base_dir, slide_name)
+        coords_csv_path = os.path.join(tiling_slide_dir, "coordinates.csv")
         
         # CLAM structure for CONCH features
         patch_h5_path = os.path.join(conch_output_dir, slide_name, "features_conch.h5")
 
         # DomainBed structure for TITAN features
-        domain = slide_to_domain.get(slide_name, "unknown_domain")
+        domain = slide_to_domain.get(f"{slide_name}.tif", "unknown_domain")
         titan_domain_dir = os.path.join(titan_output_dir, domain)
         slide_npy_path = os.path.join(titan_domain_dir, f"{slide_name}.npy")
 
