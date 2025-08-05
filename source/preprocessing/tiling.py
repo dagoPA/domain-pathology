@@ -3,64 +3,90 @@ tiling.py
 
 This module calculates the coordinates of tissue tiles from a WSI, using
 previously generated segmentation contours from a GeoJSON file.
+
+It now includes an integrated visualization function to display the final
+tiling grid on the first processed WSI, removing the need for a separate
+visualization script.
 """
 import os
 import glob
 import openslide
 import geopandas as gpd
 from shapely.geometry import box
+from shapely.affinity import scale
 from PIL import Image
 import cv2
 from matplotlib import pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.collections import PatchCollection
 import csv
 import random
+import numpy as np
 
 from source.config import locations
 from source.config import config
 
 
-def visualize_tiling(wsi, wsi_path, valid_coords, params, output_path, show_figure):
+def visualize_grid_on_wsi(wsi, wsi_path, geojson_path, valid_coords, params, output_path, show_figure, thumbnail_level=3):
     """
-    Generates a 2x5 grid visualization of 10 random sample tiles.
+    Generates a high-resolution thumbnail and overlays the tile locations
+    as a proper grid of rectangles. This function replaces the old visualizer.
     """
-    print("  Generating visualization...")
+    print("  Generating detailed grid visualization...")
     try:
         if not valid_coords:
             print("  Skipping visualization: No valid coordinates found.")
             return
 
-        # --- Setup 2x5 Subplot Grid ---
-        fig, axes = plt.subplots(2, 5, figsize=(15, 6))
-        fig.suptitle(f"Sample Tiles for {os.path.basename(wsi_path)}", fontsize=16)
+        tissue_polygons_gdf = gpd.read_file(geojson_path)
 
-        # --- Get Sample Tiles ---
-        sample_coords = random.sample(valid_coords, min(10, len(valid_coords)))
+        # Get thumbnail and scaling info
+        downsample_factor = wsi.level_downsamples[thumbnail_level]
+        thumbnail_dims = wsi.level_dimensions[thumbnail_level]
+        thumbnail_img = wsi.read_region((0, 0), thumbnail_level, thumbnail_dims).convert("RGB")
 
-        try:
-            base_mag = float(wsi.properties[openslide.PROPERTY_NAME_OBJECTIVE_POWER])
-        except (KeyError, ValueError):
-            base_mag = 40.0
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(20, 20))
+        ax.imshow(thumbnail_img)
+        ax.set_title(f'Tiling Grid for {os.path.basename(wsi_path)} | Level: {thumbnail_level} | Tiles: {len(valid_coords)}')
 
+        # Draw tissue polygons (blue line)
+        scaled_polygons = [scale(geom, xfact=1/downsample_factor, yfact=1/downsample_factor, origin=(0,0))
+                           for geom in tissue_polygons_gdf.geometry]
+        gpd.GeoDataFrame(geometry=scaled_polygons).plot(ax=ax, edgecolor='blue', facecolor='none', linewidth=2)
+
+        # Draw the actual grid using PatchCollection
+        # The base magnification is now read from the config file.
+        base_mag = config.WSI_BASE_MAGNIFICATION
         patch_size_at_base_mag = int(params["patch_size"] * (base_mag / params["magnification"]))
+        scaled_patch_size = patch_size_at_base_mag / downsample_factor
 
-        # --- Draw Sample Tiles in Subplots ---
-        ax_flat = axes.flatten()
-        for i, (x, y) in enumerate(sample_coords):
-            tile_pil = wsi.read_region((x, y), 0, (patch_size_at_base_mag, patch_size_at_base_mag)).convert("RGB")
-            # Resize to final patch size for consistent display
-            tile_resized = tile_pil.resize((params["patch_size"], params["patch_size"]), Image.Resampling.LANCZOS)
+        rects = []
+        for x, y in valid_coords:
+            rect = patches.Rectangle(
+                (x / downsample_factor, y / downsample_factor),
+                scaled_patch_size,
+                scaled_patch_size
+            )
+            rects.append(rect)
 
-            ax_flat[i].imshow(tile_resized)
-            ax_flat[i].set_title(f"({x},{y})", fontsize=8)
-            ax_flat[i].axis('off')
+        # Create a single collection of all tile patches
+        tile_collection = PatchCollection(
+            rects,
+            edgecolor='lime',   # Color of the grid lines
+            linewidth=0.5,      # Thin lines for a tight grid
+            facecolor='lime',   # Fill color for the squares
+            alpha=0.25          # Semi-transparent fill to see tissue and grid
+        )
+        ax.add_collection(tile_collection)
 
-        # Turn off axes for any unused subplots
-        for i in range(len(sample_coords), 10):
-            ax_flat[i].axis('off')
+        plt.axis('off')
+        plt.tight_layout()
 
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.savefig(output_path)
-        print(f"  Visualization saved to: {output_path}")
+        if output_path:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            plt.savefig(output_path)
+            print(f"  Visualization saved to: {output_path}")
 
         if show_figure:
             print("  Displaying plot for the first slide...")
@@ -69,7 +95,7 @@ def visualize_tiling(wsi, wsi_path, valid_coords, params, output_path, show_figu
         plt.close(fig)
 
     except Exception as e:
-        print(f"  An error occurred during visualization: {e}")
+        print(f"  An error occurred during detailed visualization: {e}")
 
 
 def calculate_and_save_coords(wsi_path, geojson_path, output_csv_path, params, visualize=False, vis_output_path=None, show_figure=False):
@@ -85,24 +111,19 @@ def calculate_and_save_coords(wsi_path, geojson_path, output_csv_path, params, v
         return
 
     tissue_unary = tissue_contours.union_all()
-
     target_mag = params["magnification"]
     patch_size_at_target_mag = params["patch_size"]
-    step_size = patch_size_at_target_mag - params["overlap"]
 
-    try:
-        base_mag = float(wsi.properties[openslide.PROPERTY_NAME_OBJECTIVE_POWER])
-    except (KeyError, ValueError):
-        print("  Warning: Could not read base magnification. Assuming 40x.")
-        base_mag = 40.0
+    # The base magnification is now read from the config file.
+    base_mag = config.WSI_BASE_MAGNIFICATION
 
     patch_size_level0 = int(patch_size_at_target_mag * (base_mag / target_mag))
-    step_size_level0 = int(step_size * (base_mag / target_mag))
+    step_size_level0 = patch_size_level0
 
     width, height = wsi.dimensions
     valid_coords = []
 
-    print("  Calculating valid coordinates...")
+    print(f"  Calculating valid coordinates with a forced step size of {step_size_level0}px...")
     for y in range(0, height - patch_size_level0, step_size_level0):
         for x in range(0, width - patch_size_level0, step_size_level0):
             patch_box = box(x, y, x + patch_size_level0, y + patch_size_level0)
@@ -111,8 +132,8 @@ def calculate_and_save_coords(wsi_path, geojson_path, output_csv_path, params, v
                     valid_coords.append((x, y))
 
     if visualize:
-        # Note: The 'tissue_unary' argument is no longer needed for the new visualization
-        visualize_tiling(wsi, wsi_path, valid_coords, params, vis_output_path, show_figure)
+        # Call the new, integrated visualization function
+        visualize_grid_on_wsi(wsi, wsi_path, geojson_path, valid_coords, params, vis_output_path, show_figure)
 
     if not valid_coords:
         print("  No valid tissue patches were found.")
@@ -133,7 +154,7 @@ def calculate_and_save_coords(wsi_path, geojson_path, output_csv_path, params, v
     wsi.close()
 
 
-def process_all_slides(max_slides=None, show_first_slide_tiling=False):
+def process_all_slides(max_slides=None, visualize_tiling=False, show_tiling_figure=False):
     """
     Finds all segmentation results and runs the coordinate calculation process.
     """
@@ -146,6 +167,9 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
 
     wsi_dir = locations.get_dataset_dir()
     segmentation_base_dir = locations.get_segmentation_output_dir()
+    tiling_base_dir = locations.get_tiling_output_dir()
+    visualizations_base_dir = locations.get_visualizations_output_dir()
+
     segmentation_dirs = sorted([d for d in glob.glob(os.path.join(segmentation_base_dir, "*")) if os.path.isdir(d)])
 
     if not segmentation_dirs:
@@ -156,29 +180,33 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
         segmentation_dirs = segmentation_dirs[:max_slides]
         print(f"Processing a subset of {len(segmentation_dirs)} slides.")
 
-    for i, slide_dir in enumerate(segmentation_dirs):
-        slide_name = os.path.basename(slide_dir)
+    for i, seg_slide_dir in enumerate(segmentation_dirs):
+        slide_name = os.path.basename(seg_slide_dir)
         print(f"\n--- Processing: {slide_name} ---")
 
         wsi_path = os.path.join(wsi_dir, f"{slide_name}.tif")
-        geojson_path = os.path.join(slide_dir, f"{slide_name}_contours.geojson")
-        coords_output_path = os.path.join(slide_dir, "coordinates.csv")
-        vis_output_path = os.path.join(slide_dir, f"{slide_name}_tiling_visualization.png")
+        geojson_path = os.path.join(seg_slide_dir, f"{slide_name}_contours.geojson")
+
+        tiling_output_slide_dir = os.path.join(tiling_base_dir, slide_name)
+        coords_output_path = os.path.join(tiling_output_slide_dir, "coordinates.csv")
+        
+        visualizations_slide_dir = os.path.join(visualizations_base_dir, slide_name)
+        vis_output_path = os.path.join(visualizations_slide_dir, f"{slide_name}_tiling_grid_visualization.png")
 
         if not (os.path.exists(wsi_path) and os.path.exists(geojson_path)):
             print(f"  Error: Missing WSI or GeoJSON file for {slide_name}.")
             continue
 
-        should_visualize = (i == 0 and show_first_slide_tiling)
+        should_show = (i == 0 and show_tiling_figure)
 
         calculate_and_save_coords(
             wsi_path=wsi_path,
             geojson_path=geojson_path,
             output_csv_path=coords_output_path,
             params=params,
-            visualize=should_visualize,
+            visualize=visualize_tiling,
             vis_output_path=vis_output_path,
-            show_figure=should_visualize
+            show_figure=should_show
         )
 
     print("\n--- All slides have been processed. ---")
@@ -186,5 +214,5 @@ def process_all_slides(max_slides=None, show_first_slide_tiling=False):
 
 if __name__ == '__main__':
     print("--- Running coordinate calculation script in standalone mode ---")
-    process_all_slides(max_slides=2, show_first_slide_tiling=True)
+    process_all_slides(max_slides=2, visualize_tiling=True, show_tiling_figure=True)
     print("\n--- Standalone script execution finished. ---")
