@@ -76,7 +76,7 @@ def create_tissue_mask(wsi_path, params):
         filtered_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
 
         low_res_mask = np.zeros_like(closed_mask)
-        cv2.drawContours(low_res_mask, filtered_contours, -1, (255), -1)
+        cv2.drawContours(low_res_mask, filtered_contours, -1, 255, -1)
 
         return low_res_mask, thumb_rgb, filtered_contours, level
 
