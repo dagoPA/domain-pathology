@@ -6,8 +6,8 @@ Contains global variables and paths used throughout the project.
 import os
 
 # --- Primary Paths (Configured for a specific server environment) ---
-PRIMARY_BASE_DIR = "/home/dagopa/projects/domain-pathology"
-PRIMARY_DATASET_DIR = "/home/dagopa/data/CAMELYON17/WSI"
+PRIMARY_BASE_DIR = "/autofs/space/crater_001/projects/micropath/domain-pathology"
+PRIMARY_DATASET_DIR = "/autofs/space/crater_001/datasets/public/CAMELYON17/WSI"
 CONCH_MODEL_PATH = "/autofs/space/crater_001/tools/wsi_encoders/conch_v15.bin"
 
 # --- Project-specific Subdirectories ---
